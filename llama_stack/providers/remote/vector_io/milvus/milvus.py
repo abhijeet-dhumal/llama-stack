@@ -267,10 +267,18 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorDBsProtocolP
         self.metadata_collection_name = "openai_vector_stores_metadata"
 
     async def initialize(self) -> None:
-        self.kvstore = await kvstore_impl(self.config.kvstore)
-        start_key = VECTOR_DBS_PREFIX
-        end_key = f"{VECTOR_DBS_PREFIX}\xff"
-        stored_vector_dbs = await self.kvstore.values_in_range(start_key, end_key)
+        # Initialize kvstore only if configured
+        if self.config.kvstore is not None:
+            self.kvstore = await kvstore_impl(self.config.kvstore)
+        else:
+            self.kvstore = None
+
+        if self.kvstore is not None:
+            start_key = VECTOR_DBS_PREFIX
+            end_key = f"{VECTOR_DBS_PREFIX}\xff"
+            stored_vector_dbs = await self.kvstore.values_in_range(start_key, end_key)
+        else:
+            stored_vector_dbs = []
 
         for vector_db_data in stored_vector_dbs:
             vector_db = VectorDB.model_validate_json(vector_db_data)
@@ -371,6 +379,36 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorDBsProtocolP
 
         return await index.query_chunks(query, params)
 
+    async def _save_openai_vector_store(self, store_id: str, store_info: dict[str, Any]) -> None:
+        """Save vector store metadata to persistent storage."""
+        if self.kvstore is not None:
+            key = f"{OPENAI_VECTOR_STORES_PREFIX}{store_id}"
+            await self.kvstore.set(key=key, value=json.dumps(store_info))
+        self.openai_vector_stores[store_id] = store_info
+
+    async def _update_openai_vector_store(self, store_id: str, store_info: dict[str, Any]) -> None:
+        """Update vector store metadata in persistent storage."""
+        if self.kvstore is not None:
+            key = f"{OPENAI_VECTOR_STORES_PREFIX}{store_id}"
+            await self.kvstore.set(key=key, value=json.dumps(store_info))
+        self.openai_vector_stores[store_id] = store_info
+
+    async def _delete_openai_vector_store_from_storage(self, store_id: str) -> None:
+        """Delete vector store metadata from persistent storage."""
+        if self.kvstore is not None:
+            key = f"{OPENAI_VECTOR_STORES_PREFIX}{store_id}"
+            await self.kvstore.delete(key)
+        if store_id in self.openai_vector_stores:
+            del self.openai_vector_stores[store_id]
+
+    async def _load_openai_vector_stores(self) -> dict[str, dict[str, Any]]:
+        """Load all vector store metadata from persistent storage."""
+        if self.kvstore is None:
+            return {}
+        start_key = OPENAI_VECTOR_STORES_PREFIX
+        end_key = f"{OPENAI_VECTOR_STORES_PREFIX}\xff"
+        stored = await self.kvstore.values_in_range(start_key, end_key)
+        return {json.loads(s)["id"]: json.loads(s) for s in stored}
     async def _save_openai_vector_store_file(
         self, store_id: str, file_id: str, file_info: dict[str, Any], file_contents: list[dict[str, Any]]
     ) -> None:
