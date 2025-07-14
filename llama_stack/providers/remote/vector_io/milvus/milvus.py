@@ -267,18 +267,30 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorDBsProtocolP
         self.metadata_collection_name = "openai_vector_stores_metadata"
 
     async def initialize(self) -> None:
-        # Initialize kvstore only if configured
-        if self.config.kvstore is not None:
+        # MilvusVectorIOAdapter is used for both inline and remote connections
+        if isinstance(self.config, RemoteMilvusVectorIOConfig):
+            # Remote Milvus: kvstore is optional for registry persistence across server restarts
+            if self.config.kvstore is not None:
+                self.kvstore = await kvstore_impl(self.config.kvstore)
+                logger.info("Remote Milvus: Using kvstore for vector database registry persistence")
+            else:
+                self.kvstore = None
+                logger.info("Remote Milvus: No kvstore configured, registry will not persist across restarts")
+            if self.kvstore is not None:
+                start_key = VECTOR_DBS_PREFIX
+                end_key = f"{VECTOR_DBS_PREFIX}\xff"
+                stored_vector_dbs = await self.kvstore.values_in_range(start_key, end_key)
+            else:
+                stored_vector_dbs = []
+                
+        elif isinstance(self.config, InlineMilvusVectorIOConfig):
             self.kvstore = await kvstore_impl(self.config.kvstore)
-        else:
-            self.kvstore = None
-
-        if self.kvstore is not None:
+            logger.info("Inline Milvus: Using kvstore for local vector database registry")
             start_key = VECTOR_DBS_PREFIX
             end_key = f"{VECTOR_DBS_PREFIX}\xff"
             stored_vector_dbs = await self.kvstore.values_in_range(start_key, end_key)
         else:
-            stored_vector_dbs = []
+            raise ValueError(f"Unsupported config type: {type(self.config)}. Expected RemoteMilvusVectorIOConfig or InlineMilvusVectorIOConfig")
 
         for vector_db_data in stored_vector_dbs:
             vector_db = VectorDB.model_validate_json(vector_db_data)
@@ -294,12 +306,14 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorDBsProtocolP
             )
             self.cache[vector_db.identifier] = index
         if isinstance(self.config, RemoteMilvusVectorIOConfig):
-            logger.info(f"Connecting to Milvus server at {self.config.uri}")
+            logger.info(f"Connecting to remote Milvus server at {self.config.uri}")
             self.client = MilvusClient(**self.config.model_dump(exclude_none=True))
-        else:
-            logger.info(f"Connecting to Milvus Lite at: {self.config.db_path}")
+        elif isinstance(self.config, InlineMilvusVectorIOConfig):
+            logger.info(f"Connecting to local Milvus Lite at: {self.config.db_path}")
             uri = os.path.expanduser(self.config.db_path)
             self.client = MilvusClient(uri=uri)
+        else:
+            raise ValueError(f"Unsupported config type: {type(self.config)}. Expected RemoteMilvusVectorIOConfig or InlineMilvusVectorIOConfig")
 
         # Load existing OpenAI vector stores into the in-memory cache
         await self.initialize_openai_vector_stores()
@@ -311,10 +325,13 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorDBsProtocolP
         self,
         vector_db: VectorDB,
     ) -> None:
+        # Set consistency level based on configuration type
         if isinstance(self.config, RemoteMilvusVectorIOConfig):
             consistency_level = self.config.consistency_level
+        elif isinstance(self.config, InlineMilvusVectorIOConfig):
+            consistency_level = self.config.consistency_level
         else:
-            consistency_level = "Strong"
+            raise ValueError(f"Unsupported config type: {type(self.config)}. Expected RemoteMilvusVectorIOConfig or InlineMilvusVectorIOConfig")
         index = VectorDBWithIndex(
             vector_db=vector_db,
             index=MilvusIndex(self.client, vector_db.identifier, consistency_level=consistency_level),
