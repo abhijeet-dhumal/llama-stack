@@ -18,8 +18,8 @@ class MilvusVectorIOConfig(BaseModel):
     token: str | None = Field(description="The token of the Milvus server")
     consistency_level: str = Field(description="The consistency level of the Milvus server", default="Strong")
     kvstore: KVStoreConfig | None = Field(
-        description="Config for KV store backend (SQLite only for now). Optional for remote Milvus connections - only needed for vector database registry persistence across server restarts.", 
-        default=None
+        description="Config for KV store backend (SQLite only for now). Optional for remote Milvus connections - only needed for vector database registry persistence across server restarts.",
+        default=None,
     )
 
     # This configuration allows additional fields to be passed through to the underlying Milvus client.

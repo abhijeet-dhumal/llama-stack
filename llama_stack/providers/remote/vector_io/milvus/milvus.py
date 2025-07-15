@@ -282,7 +282,7 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorDBsProtocolP
                 stored_vector_dbs = await self.kvstore.values_in_range(start_key, end_key)
             else:
                 stored_vector_dbs = []
-                
+
         elif isinstance(self.config, InlineMilvusVectorIOConfig):
             self.kvstore = await kvstore_impl(self.config.kvstore)
             logger.info("Inline Milvus: Using kvstore for local vector database registry")
@@ -290,7 +290,9 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorDBsProtocolP
             end_key = f"{VECTOR_DBS_PREFIX}\xff"
             stored_vector_dbs = await self.kvstore.values_in_range(start_key, end_key)
         else:
-            raise ValueError(f"Unsupported config type: {type(self.config)}. Expected RemoteMilvusVectorIOConfig or InlineMilvusVectorIOConfig")
+            raise ValueError(
+                f"Unsupported config type: {type(self.config)}. Expected RemoteMilvusVectorIOConfig or InlineMilvusVectorIOConfig"
+            )
 
         for vector_db_data in stored_vector_dbs:
             vector_db = VectorDB.model_validate_json(vector_db_data)
@@ -313,7 +315,9 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorDBsProtocolP
             uri = os.path.expanduser(self.config.db_path)
             self.client = MilvusClient(uri=uri)
         else:
-            raise ValueError(f"Unsupported config type: {type(self.config)}. Expected RemoteMilvusVectorIOConfig or InlineMilvusVectorIOConfig")
+            raise ValueError(
+                f"Unsupported config type: {type(self.config)}. Expected RemoteMilvusVectorIOConfig or InlineMilvusVectorIOConfig"
+            )
 
         # Load existing OpenAI vector stores into the in-memory cache
         await self.initialize_openai_vector_stores()
@@ -331,7 +335,9 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorDBsProtocolP
         elif isinstance(self.config, InlineMilvusVectorIOConfig):
             consistency_level = self.config.consistency_level
         else:
-            raise ValueError(f"Unsupported config type: {type(self.config)}. Expected RemoteMilvusVectorIOConfig or InlineMilvusVectorIOConfig")
+            raise ValueError(
+                f"Unsupported config type: {type(self.config)}. Expected RemoteMilvusVectorIOConfig or InlineMilvusVectorIOConfig"
+            )
         index = VectorDBWithIndex(
             vector_db=vector_db,
             index=MilvusIndex(self.client, vector_db.identifier, consistency_level=consistency_level),
@@ -426,6 +432,7 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorDBsProtocolP
         end_key = f"{OPENAI_VECTOR_STORES_PREFIX}\xff"
         stored = await self.kvstore.values_in_range(start_key, end_key)
         return {json.loads(s)["id"]: json.loads(s) for s in stored}
+
     async def _save_openai_vector_store_file(
         self, store_id: str, file_id: str, file_info: dict[str, Any], file_contents: list[dict[str, Any]]
     ) -> None:
